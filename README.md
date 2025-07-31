@@ -1,6 +1,6 @@
 # Real-Time Orderbook Viewer with Order Simulation
 
-A professional Next.js application that displays real-time orderbook data from multiple cryptocurrency exchanges with advanced order simulation capabilities. Built for the GoQuant recruitment assignment.
+A professional Next.js application that displays real-time orderbook data from multiple cryptocurrency exchanges with advanced order simulation capabilities. 
 
 ## 🚀 Features
 
@@ -215,14 +215,3 @@ No environment variables required - all APIs are public endpoints.
 - [Bybit WebSocket API](https://bybit-exchange.github.io/docs/v5/ws/connect)
 - [Deribit WebSocket API](https://docs.deribit.com/#public-subscribe)
 
-## 🤝 Contributing
-
-This project was created for the GoQuant recruitment assignment. For questions or issues, please refer to the assignment requirements.
-
-## 📄 License
-
-This project is created for educational and recruitment purposes.
-
----
-
-**Built with ❤️ for GoQuant Trading Platform**
