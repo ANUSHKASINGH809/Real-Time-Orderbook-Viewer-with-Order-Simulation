@@ -107,151 +107,151 @@ export default function MarketDepthChart({ venue }) {
     : null;
 
   return (
-    <Paper
-      shadow="xl"
-      p={0}
-      radius="lg"
-      bg="dark.7"
-      style={{
-        border: '1px solid var(--mantine-color-dark-4)',
-        background: 'linear-gradient(145deg, var(--mantine-color-dark-7) 0%, var(--mantine-color-dark-8) 100%)',
-        overflow: 'hidden'
-      }}
-    >
-      {/* Enhanced Header */}
-      <Box
-        px="xl"
-        py="md"
+  <div className="goquant-shimmer-border">
+    <div className="goquant-inner-content">
+      <Paper
+        shadow="xl"
+        p={0}
+        radius="lg"
+        bg="dark.7"
         style={{
-          background: 'var(--mantine-color-dark-8)',
-          borderBottom: '1px solid var(--mantine-color-dark-4)'
+          border: '1px solid var(--mantine-color-dark-4)',
+          background: 'linear-gradient(145deg, var(--mantine-color-dark-7) 0%, var(--mantine-color-dark-8) 100%)',
+          overflow: 'hidden'
         }}
       >
-        <Group justify="space-between">
-          <Group gap="md">
-            <Text size="xl" fw={700} c="green.4" style={{ letterSpacing: 1 }}>MARKET DEPTH</Text>
-            {/* Zoom buttons placeholder, can be styled if needed */}
-            <Group gap={4}>
-              <Button size="sm" variant="light" color="green" radius="xl" style={{ fontWeight: 700, minWidth: 32 }}>-</Button>
-              <Button size="sm" variant="light" color="green" radius="xl" style={{ fontWeight: 700, minWidth: 32 }}>+</Button>
+        {/* Enhanced Header */}
+        <Box
+          px="xl"
+          py="md"
+          style={{
+            background: 'var(--mantine-color-dark-8)',
+            borderBottom: '1px solid var(--mantine-color-dark-4)'
+          }}
+        >
+          <Group justify="space-between">
+            <Group gap="md">
+              <Text size="xl" fw={700} c="green.4" style={{ letterSpacing: 1 }}>MARKET DEPTH</Text>
+              <Group gap={4}>
+                <Button size="sm" variant="light" color="green" radius="xl" style={{ fontWeight: 700, minWidth: 32 }}>-</Button>
+                <Button size="sm" variant="light" color="green" radius="xl" style={{ fontWeight: 700, minWidth: 32 }}>+</Button>
+              </Group>
             </Group>
+            <Box ta="center">
+              <Text size="xl" fw={700} c="gray.1">
+                {midMarketPrice ? midMarketPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 }) : 'N/A'}
+              </Text>
+              <Text size="sm" c="gray.5">Mid Market Price</Text>
+            </Box>
           </Group>
-          <Box ta="center">
-            <Text size="xl" fw={700} c="gray.1">
-              {midMarketPrice ? midMarketPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 }) : 'N/A'}
-            </Text>
-            <Text size="sm" c="gray.5">Mid Market Price</Text>
-          </Box>
-        </Group>
-      </Box>
-      {/* Chart Container */}
-      <Box p="md" style={{ background: 'var(--mantine-color-dark-8)', height: 320 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
-            <defs>
-              <linearGradient id="bidGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#10B981" stopOpacity={0.8}/>
-                <stop offset="95%" stopColor="#10B981" stopOpacity={0.1}/>
-              </linearGradient>
-              <linearGradient id="askGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#EF4444" stopOpacity={0.8}/>
-                <stop offset="95%" stopColor="#EF4444" stopOpacity={0.1}/>
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
-            <XAxis 
-              dataKey="price" 
-              type="number"
-              scale="linear"
-              tick={{ fill: '#9CA3AF', fontSize: 12 }}
-              tickLine={{ stroke: '#4B5563' }}
-              axisLine={{ stroke: '#4B5563' }}
-              tickFormatter={(value) => value.toLocaleString()}
-              domain={[
-                (dataMin) => numericSimPrice ? Math.min(dataMin, numericSimPrice - 10) : dataMin,
-                (dataMax) => numericSimPrice ? Math.max(dataMax, numericSimPrice + 10) : dataMax
-              ]}
-            />
-            <YAxis 
-              tick={{ fill: '#9CA3AF', fontSize: 12 }}
-              tickLine={{ stroke: '#4B5563' }}
-              axisLine={{ stroke: '#4B5563' }}
-              tickFormatter={(value) => value.toLocaleString()}
-            />
-            <Tooltip 
-              contentStyle={{ 
-                backgroundColor: '#1F2937', 
-                border: '1px solid #374151',
-                borderRadius: '8px',
-                color: '#F9FAFB'
-              }}
-              labelFormatter={(value) => `Price: ${value.toLocaleString()}`}
-              formatter={(value, name) => [
-                `${value.toLocaleString()} ${name === 'bid' ? 'Bids' : 'Asks'}`,
-                name === 'bid' ? 'Bids' : 'Asks'
-              ]}
-            />
-            {/* Mid Market Price Reference Line */}
-            {midMarketPrice && (
-              <ReferenceLine 
-                x={midMarketPrice} 
-                stroke="#6B7280" 
-                strokeWidth={1}
-                strokeDasharray="5 5"
-                isFront={true}
-              >
-                <Label
-                  value="Mid"
-                  position="top"
-                  fill="#6B7280"
-                  fontSize={10}
-                  fontWeight="500"
-                />
-              </ReferenceLine>
-            )}
-            <Area
-              type="monotone"
-              dataKey="bid"
-              stroke="#10B981"
-              fill="url(#bidGradient)"
-              strokeWidth={2}
-              isAnimationActive={false}
-              connectNulls={true}
-            />
-            <Area
-              type="monotone"
-              dataKey="ask"
-              stroke="#EF4444"
-              fill="url(#askGradient)"
-              strokeWidth={2}
-              isAnimationActive={false}
-              connectNulls={true}
-            />
-            {/* Simulated Order Line */}
-            {numericSimPrice && (
-              <ReferenceLine 
-                x={numericSimPrice} 
-                stroke="#F59E0B" 
-                strokeWidth={3} 
-                strokeDasharray="8 4"
-                isFront={true}
-              >
-                <Label
-                  value={`Sim: ${numericSimPrice.toFixed(2)}`}
-                  position="topLeft"
-                  fill="#F59E0B"
-                  fontSize={11}
-                  fontWeight="bold"
-                />
-              </ReferenceLine>
-            )}
-            {/* Simulated Order Point */}
-            {simPoint && (
-              <Scatter data={[simPoint]} fill="#F59E0B" shape="circle" r={4} />
-            )}
-          </AreaChart>
-        </ResponsiveContainer>
-      </Box>
-    </Paper>
-  );
+        </Box>
+        {/* Chart Container */}
+        <Box p="md" style={{ background: 'var(--mantine-color-dark-8)', height: 320 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
+              <defs>
+                <linearGradient id="bidGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#10B981" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="#10B981" stopOpacity={0.1}/>
+                </linearGradient>
+                <linearGradient id="askGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#EF4444" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="#EF4444" stopOpacity={0.1}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
+              <XAxis 
+                dataKey="price" 
+                type="number"
+                scale="linear"
+                tick={{ fill: '#9CA3AF', fontSize: 12 }}
+                tickLine={{ stroke: '#4B5563' }}
+                axisLine={{ stroke: '#4B5563' }}
+                tickFormatter={(value) => value.toLocaleString()}
+                domain={[
+                  (dataMin) => numericSimPrice ? Math.min(dataMin, numericSimPrice - 10) : dataMin,
+                  (dataMax) => numericSimPrice ? Math.max(dataMax, numericSimPrice + 10) : dataMax
+                ]}
+              />
+              <YAxis 
+                tick={{ fill: '#9CA3AF', fontSize: 12 }}
+                tickLine={{ stroke: '#4B5563' }}
+                axisLine={{ stroke: '#4B5563' }}
+                tickFormatter={(value) => value.toLocaleString()}
+              />
+              <Tooltip 
+                contentStyle={{ 
+                  backgroundColor: '#1F2937', 
+                  border: '1px solid #374151',
+                  borderRadius: '8px',
+                  color: '#F9FAFB'
+                }}
+                labelFormatter={(value) => `Price: ${value.toLocaleString()}`}
+                formatter={(value, name) => [
+                  `${value.toLocaleString()} ${name === 'bid' ? 'Bids' : 'Asks'}`,
+                  name === 'bid' ? 'Bids' : 'Asks'
+                ]}
+              />
+              {midMarketPrice && (
+                <ReferenceLine 
+                  x={midMarketPrice} 
+                  stroke="#6B7280" 
+                  strokeWidth={1}
+                  strokeDasharray="5 5"
+                  isFront={true}
+                >
+                  <Label
+                    value="Mid"
+                    position="top"
+                    fill="#6B7280"
+                    fontSize={10}
+                    fontWeight="500"
+                  />
+                </ReferenceLine>
+              )}
+              <Area
+                type="monotone"
+                dataKey="bid"
+                stroke="#10B981"
+                fill="url(#bidGradient)"
+                strokeWidth={2}
+                isAnimationActive={false}
+                connectNulls={true}
+              />
+              <Area
+                type="monotone"
+                dataKey="ask"
+                stroke="#EF4444"
+                fill="url(#askGradient)"
+                strokeWidth={2}
+                isAnimationActive={false}
+                connectNulls={true}
+              />
+              {numericSimPrice && (
+                <ReferenceLine 
+                  x={numericSimPrice} 
+                  stroke="#F59E0B" 
+                  strokeWidth={3} 
+                  strokeDasharray="8 4"
+                  isFront={true}
+                >
+                  <Label
+                    value={`Sim: ${numericSimPrice.toFixed(2)}`}
+                    position="topLeft"
+                    fill="#F59E0B"
+                    fontSize={11}
+                    fontWeight="bold"
+                  />
+                </ReferenceLine>
+              )}
+              {simPoint && (
+                <Scatter data={[simPoint]} fill="#F59E0B" shape="circle" r={4} />
+              )}
+            </AreaChart>
+          </ResponsiveContainer>
+        </Box>
+      </Paper>
+    </div>
+  </div>
+);
 }

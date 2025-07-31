@@ -1,5 +1,28 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useOrderbookStore } from '@/store/orderbookStore';
+import {
+  Paper,
+  Title,
+  Button,
+  Group,
+  Stack,
+  Grid,
+  Select,
+  NumberInput,
+  Text,
+  Badge,
+  Card,
+  Alert,
+  Box,
+  Divider
+} from '@mantine/core';
+import { 
+  IconChartLine, 
+  IconClock, 
+  IconTrendingUp, 
+  IconTrendingDown,
+  IconInfoCircle 
+} from '@tabler/icons-react';
 
 const TIMING_SCENARIOS = [
   { label: 'Immediate', value: 0, icon: '⚡' },
@@ -50,15 +73,10 @@ export default function TimingComparison({ currentVenue = 'okx' }) {
         setHasStableData(true);
       }, 2000);
     } else {
-      // Data is missing, but don't immediately mark as unstable
-      // Only mark unstable after 5 seconds of no data
+      setHasStableData(false);
       if (stableDataTimerRef.current) {
         clearTimeout(stableDataTimerRef.current);
       }
-      
-      stableDataTimerRef.current = setTimeout(() => {
-        setHasStableData(false);
-      }, 5000);
     }
 
     return () => {
@@ -68,101 +86,64 @@ export default function TimingComparison({ currentVenue = 'okx' }) {
     };
   }, [orderbooks, comparisonParams.venue]);
 
-  const simulateForTiming = (delaySec) => {
-    // Use current data if available, otherwise use last good data
-    const ob = orderbooks[comparisonParams.venue] || lastGoodDataRef.current;
-    if (!ob || ob.bids.length === 0 || ob.asks.length === 0) return null;
+  // Helper function to simulate order for a specific timing scenario
+  const simulateForTiming = (delaySeconds) => {
+    const orderbook = lastGoodDataRef.current || orderbooks[comparisonParams.venue];
+    if (!orderbook || !orderbook.bids.length || !orderbook.asks.length) {
+      return null;
+    }
 
-    const bids = ob.bids.map(([p, q]) => ({ price: +p, qty: +q }));
-    const asks = ob.asks.map(([p, q]) => ({ price: +p, qty: +q }));
-    const bestBid = bids.length ? bids[0].price : 0;
-    const bestAsk = asks.length ? asks[0].price : 0;
-    const mid = bestBid && bestAsk ? (bestBid + bestAsk) / 2 : 0;
-
+    // For market orders, simulate immediate execution
     if (comparisonParams.orderType === 'market') {
-      return simulateMarket({
+      const levels = comparisonParams.side === 'Buy' ? orderbook.asks : orderbook.bids;
+      let remainingQty = comparisonParams.quantity;
+      let totalCost = 0;
+      let filledQty = 0;
+
+      for (const [price, qty] of levels) {
+        const levelPrice = parseFloat(price);
+        const levelQty = parseFloat(qty);
+        
+        if (remainingQty <= 0) break;
+        
+        const fillQty = Math.min(remainingQty, levelQty);
+        totalCost += fillQty * levelPrice;
+        filledQty += fillQty;
+        remainingQty -= fillQty;
+      }
+
+      const avgPrice = filledQty > 0 ? totalCost / filledQty : 0;
+      const bestPrice = parseFloat(levels[0][0]);
+      const impactBps = filledQty > 0 ? Math.abs((avgPrice - bestPrice) / bestPrice) * 10000 : 0;
+
+      return {
+        type: 'market',
         side: comparisonParams.side,
         quantity: comparisonParams.quantity,
-        bestBid,
-        bestAsk,
-        mid,
-        bids,
-        asks,
-      });
+        filledQty,
+        filledPct: (filledQty / comparisonParams.quantity) * 100,
+        avgPrice,
+        bestPrice,
+        impactBps,
+        slippageBps: impactBps,
+        delaySeconds,
+        status: filledQty > 0 ? 'filled' : 'failed'
+      };
     }
 
-    return simulateLimit({
-      side: comparisonParams.side,
-      price: comparisonParams.price || (comparisonParams.side === 'Buy' ? bestBid : bestAsk),
-      quantity: comparisonParams.quantity,
-      bestBid,
-      bestAsk,
-      mid,
-      bids,
-      asks,
-    });
-  };
-
-  const simulateMarket = ({ side, quantity, bestBid, bestAsk, mid, bids, asks }) => {
-    const bookSide = side === 'Buy' ? asks : bids;
-    const bookSorted = side === 'Buy'
-      ? [...bookSide].sort((a, b) => a.price - b.price)
-      : [...bookSide].sort((a, b) => b.price - a.price);
-
-    let remaining = quantity, cost = 0, filledQty = 0;
-    for (const lvl of bookSorted) {
-      if (remaining <= 0) break;
-      const take = Math.min(remaining, lvl.qty);
-      filledQty += take;
-      cost += take * lvl.price;
-      remaining -= take;
-    }
-
-    const filledPct = filledQty / quantity;
-    const avgFillPrice = filledQty > 0 ? cost / filledQty : 0;
-    const ref = side === 'Buy' ? bestAsk : bestBid;
-    const slippageBps = ref ? ((avgFillPrice - ref) / ref) * 10000 * (side === 'Buy' ? 1 : -1) : 0;
-    const impactBps = mid ? ((avgFillPrice - mid) / mid) * 10000 : 0;
-
-    return {
-      type: 'market',
-      filledQty,
-      filledPct,
-      avgFillPrice,
-      slippageBps,
-      impactBps,
-      remainingQty: Math.max(remaining, 0),
-    };
-  };
-
-  const simulateLimit = ({ side, price, quantity, bestBid, bestAsk, mid, bids, asks }) => {
-    const isBuy = side === 'Buy';
-    const crosses = (isBuy && price >= bestAsk) || (!isBuy && price <= bestBid);
-
-    if (crosses) {
-      return simulateMarket({ side, quantity, bestBid, bestAsk, mid, bids, asks });
-    }
-
-    const mySide = isBuy ? [...bids].sort((a, b) => b.price - a.price) : [...asks].sort((a, b) => a.price - b.price);
-    let aheadQty = 0;
-    for (const lvl of mySide) {
-      if (isBuy) {
-        if (lvl.price > price) aheadQty += lvl.qty;
-      } else {
-        if (lvl.price < price) aheadQty += lvl.qty;
-      }
-    }
-
-    const impactBps = mid ? ((price - mid) / mid) * 10000 * (isBuy ? 1 : -1) : 0;
-
+    // For limit orders, show theoretical placement
+    const price = comparisonParams.price || (comparisonParams.side === 'Buy' ? 
+      parseFloat(orderbook.bids[0][0]) : parseFloat(orderbook.asks[0][0]));
+    
     return {
       type: 'limit',
-      crosses: false,
-      queueAheadQty: aheadQty,
-      filledPct: 0,
+      side: comparisonParams.side,
+      quantity: comparisonParams.quantity,
       price,
-      impactBps,
-      slippageBps: impactBps,
+      impactBps: 0,
+      slippageBps: 0,
+      delaySeconds,
+      status: 'pending'
     };
   };
 
@@ -175,209 +156,281 @@ export default function TimingComparison({ currentVenue = 'okx' }) {
   }, [showComparison, hasStableData, comparisonParams, orderbooks]);
 
   const getScenarioColor = (result) => {
-    if (!result) return 'bg-black border-gray-700';
+    if (!result) return 'dark.4';
     if (result.type === 'market') {
       const slippage = Math.abs(result.slippageBps);
-      if (slippage > 50) return 'bg-red-900/30 border-red-600';
-      if (slippage > 20) return 'bg-yellow-900/30 border-yellow-600';
-      return 'bg-green-900/30 border-green-600';
+      if (slippage > 50) return 'red.9';
+      if (slippage > 20) return 'yellow.9';
+      return 'green.9';
     }
-    return 'bg-black border-gray-700';
+    return 'dark.4';
   };
 
   return (
-    <div className="bg-gray-900 rounded-lg shadow-md p-4 border border-gray-700">
-      <div className="flex justify-between items-center mb-4">
-        <div className="flex items-center gap-3">
-          <h2 className="text-xl font-bold text-green-500">TIMING SCENARIO COMPARISON</h2>
+    <Paper shadow="xl" p="xl" radius="lg" bg="dark.7" style={{ border: '1px solid var(--mantine-color-dark-4)' }}>
+      <Group justify="space-between" align="center" mb="xl">
+        <Group align="center" gap="md">
+          <Title order={2} size="xl" c="green.4" fw={700} style={{ letterSpacing: '1px' }}>
+            TIMING SCENARIO COMPARISON
+          </Title>
+          <IconClock size={24} color="var(--mantine-color-green-4)" />
           {showComparison && (
-            <div className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-              hasStableData 
-                ? 'bg-green-100 text-green-800' 
-                : 'bg-yellow-100 text-yellow-800'
-            }`}>
-              {hasStableData ? (
-                <>
-                  <div className="w-2 h-2 bg-green-500 rounded-full mr-1"></div>
-                  Data Stable
-                </>
-              ) : (
-                <>
-                  <div className="w-2 h-2 bg-yellow-500 rounded-full mr-1 animate-pulse"></div>
-                  Stabilizing...
-                </>
-              )}
-            </div>
+            <Badge
+              variant="light"
+              color={hasStableData ? "green" : "yellow"}
+              size="sm"
+              leftSection={
+                <Box
+                  w={8}
+                  h={8}
+                  bg={hasStableData ? "green.4" : "yellow.4"}
+                  style={{ 
+                    borderRadius: '50%',
+                    animation: hasStableData ? 'none' : 'pulse 2s infinite'
+                  }}
+                />
+              }
+            >
+              {hasStableData ? 'Data Stable' : 'Stabilizing...'}
+            </Badge>
           )}
-        </div>
-        <button
+        </Group>
+        <Button
           onClick={() => setShowComparison(!showComparison)}
-          className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors border border-green-500"
+          variant="filled"
+          color="green"
+          size="md"
+          leftSection={<IconChartLine size={16} />}
+          style={{ fontWeight: 600 }}
         >
-          {showComparison ? 'Hide' : 'Compare'} Scenarios
-        </button>
-      </div>
+          {showComparison ? 'Hide Scenarios' : 'Show Scenarios'}
+        </Button>
+      </Group>
 
       {/* Fixed height container to prevent UI jumping */}
-      <div className="min-h-[400px]">
+      <Box style={{ minHeight: 400 }}>
         {!showComparison ? (
-          <div className="flex items-center justify-center h-[400px] text-gray-500">
-                      <div className="text-center">
-            <div className="text-4xl mb-4">📊</div>
-            <p className="text-lg text-white">Click "Compare Scenarios" to analyze different timing strategies</p>
-            <p className="text-sm mt-2 text-gray-400">Compare order execution across different timing delays</p>
-          </div>
-          </div>
+          <Box style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 400 }}>
+            <Stack align="center" gap="md">
+              <Text size="4rem">📊</Text>
+              <Text size="lg" c="gray.1" ta="center">
+                Click "Show Scenarios" to analyze different timing strategies
+              </Text>
+              <Text size="sm" c="gray.5" ta="center">
+                Compare order execution across different timing delays
+              </Text>
+            </Stack>
+          </Box>
         ) : !hasStableData ? (
-          <div className="flex items-center justify-center h-[400px]">
-                      <div className="bg-gray-900/50 border border-gray-600 rounded-lg p-6 max-w-md text-center">
-            <div className="text-3xl mb-3">⏳</div>
-            <h4 className="font-semibold text-gray-300 mb-2">Stabilizing Connection</h4>
-            <p className="text-sm text-gray-200 mb-4">
-              Waiting for stable data from {comparisonParams.venue.toUpperCase()}...
-            </p>
-            <p className="text-xs text-gray-300">
-              This ensures accurate timing comparisons. Please wait a moment.
-            </p>
-              <div className="mt-4">
-                <div className="inline-flex items-center text-xs text-gray-400">
-                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-gray-400 mr-2"></div>
-                  Establishing stable connection
-                </div>
-              </div>
-            </div>
-          </div>
+          <Box style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 400 }}>
+            <Card 
+              shadow="md" 
+              p="xl" 
+              radius="lg" 
+              bg="dark.6" 
+              style={{ 
+                border: '1px solid var(--mantine-color-dark-4)',
+                maxWidth: 400,
+                textAlign: 'center'
+              }}
+            >
+              <Stack align="center" gap="md">
+                <Text size="3rem">⏳</Text>
+                <Title order={4} c="gray.1">Stabilizing Connection</Title>
+                <Text size="sm" c="gray.3">
+                  Waiting for stable data from {comparisonParams.venue.toUpperCase()}...
+                </Text>
+                <Text size="xs" c="gray.4">
+                  This ensures accurate timing comparisons. Please wait a moment.
+                </Text>
+                <Group align="center" gap="xs">
+                  <Box
+                    style={{
+                      width: 12,
+                      height: 12,
+                      border: '2px solid transparent',
+                      borderTop: '2px solid var(--mantine-color-green-4)',
+                      borderRadius: '50%',
+                      animation: 'spin 1s linear infinite'
+                    }}
+                  />
+                  <Text size="xs" c="gray.4">Establishing stable connection</Text>
+                </Group>
+              </Stack>
+            </Card>
+          </Box>
         ) : (
-        <div className="space-y-4 h-[380px] overflow-y-auto">
+        <Stack gap="md" style={{ height: 380, overflowY: 'auto' }}>
           {/* Comparison Parameters */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-black rounded-lg border border-gray-700">
-            <div>
-                              <label className="block text-sm font-medium text-gray-300 mb-1">Venue</label>
-                <select
+          <Paper p="md" radius="lg" bg="dark.6" style={{ border: '1px solid var(--mantine-color-dark-4)' }}>
+            <Grid>
+              <Grid.Col span={{ base: 6, md: 3 }}>
+                <Select
+                  label="Venue"
                   value={comparisonParams.venue}
-                  onChange={(e) => setComparisonParams(prev => ({ ...prev, venue: e.target.value }))}
-                  className="w-full border border-gray-600 rounded-md px-2 py-1 text-sm bg-gray-800 text-white"
-                >
-                <option value="okx">OKX</option>
-                <option value="bybit">Bybit</option>
-                <option value="deribit">Deribit</option>
-              </select>
-            </div>
-                          <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">Order Type</label>
-                <select
-                  value={comparisonParams.orderType}
-                  onChange={(e) => setComparisonParams(prev => ({ ...prev, orderType: e.target.value }))}
-                  className="w-full border border-gray-600 rounded-md px-2 py-1 text-sm bg-gray-800 text-white"
-                >
-                <option value="market">Market</option>
-                <option value="limit">Limit</option>
-              </select>
-            </div>
-                          <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">Side</label>
-                <select
-                  value={comparisonParams.side}
-                  onChange={(e) => setComparisonParams(prev => ({ ...prev, side: e.target.value }))}
-                  className="w-full border border-gray-600 rounded-md px-2 py-1 text-sm bg-gray-800 text-white"
-                >
-                <option value="Buy">Buy</option>
-                <option value="Sell">Sell</option>
-              </select>
-            </div>
-                          <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">Quantity</label>
-                <input
-                  type="number"
-                  value={comparisonParams.quantity}
-                  onChange={(e) => setComparisonParams(prev => ({ ...prev, quantity: parseFloat(e.target.value) || 0 }))}
-                  step="0.0001"
-                  className="w-full border border-gray-600 rounded-md px-2 py-1 text-sm bg-gray-800 text-white"
+                  onChange={(value) => setComparisonParams(prev => ({ ...prev, venue: value }))}
+                  data={[
+                    { value: 'okx', label: 'OKX' },
+                    { value: 'bybit', label: 'Bybit' },
+                    { value: 'deribit', label: 'Deribit' }
+                  ]}
+                  size="sm"
+                  styles={{
+                    label: { color: 'var(--mantine-color-gray-3)', fontWeight: 500 }
+                  }}
                 />
-              </div>
-          </div>
+              </Grid.Col>
+              <Grid.Col span={{ base: 6, md: 3 }}>
+                <Select
+                  label="Order Type"
+                  value={comparisonParams.orderType}
+                  onChange={(value) => setComparisonParams(prev => ({ ...prev, orderType: value }))}
+                  data={[
+                    { value: 'market', label: 'Market' },
+                    { value: 'limit', label: 'Limit' }
+                  ]}
+                  size="sm"
+                  styles={{
+                    label: { color: 'var(--mantine-color-gray-3)', fontWeight: 500 }
+                  }}
+                />
+              </Grid.Col>
+              <Grid.Col span={{ base: 6, md: 3 }}>
+                <Select
+                  label="Side"
+                  value={comparisonParams.side}
+                  onChange={(value) => setComparisonParams(prev => ({ ...prev, side: value }))}
+                  data={[
+                    { value: 'Buy', label: 'Buy' },
+                    { value: 'Sell', label: 'Sell' }
+                  ]}
+                  size="sm"
+                  styles={{
+                    label: { color: 'var(--mantine-color-gray-3)', fontWeight: 500 }
+                  }}
+                />
+              </Grid.Col>
+              <Grid.Col span={{ base: 6, md: 3 }}>
+                <NumberInput
+                  label="Quantity"
+                  value={comparisonParams.quantity}
+                  onChange={(value) => setComparisonParams(prev => ({ ...prev, quantity: value || 0 }))}
+                  step={0.0001}
+                  decimalScale={4}
+                  size="sm"
+                  styles={{
+                    label: { color: 'var(--mantine-color-gray-3)', fontWeight: 500 }
+                  }}
+                />
+              </Grid.Col>
+            </Grid>
+          </Paper>
 
           {/* Comparison Results */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Grid>
             {comparisonResults.map((scenario) => (
-              <div key={scenario.value} className={`border rounded-lg p-4 h-44 flex flex-col ${getScenarioColor(scenario.result)}`}>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold text-white">{scenario.icon} {scenario.label}</h3>
-                  {scenario.result && (
-                    <span className={`text-xs px-2 py-1 rounded-full ${
-                      scenario.result.type === 'market' ? 'bg-gray-600 text-gray-200' : 'bg-purple-900/50 text-purple-200'
-                    }`}>
-                      {scenario.result.type}
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex-1 flex flex-col justify-center">
-                  {scenario.result ? (
-                    <div className="space-y-2 text-sm">
-                      {scenario.result.type === 'market' ? (
-                        <>
-                          <div className="flex justify-between">
-                            <span className="text-gray-300">Fill %:</span>
-                            <span className={`font-medium ${scenario.result.filledPct < 0.8 ? 'text-yellow-400' : 'text-green-400'}`}>
-                              {(scenario.result.filledPct * 100).toFixed(1)}%
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-300">Avg Price:</span>
-                            <span className="font-medium text-white">
-                              {scenario.result.avgFillPrice.toFixed(2)}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-300">Slippage:</span>
-                            <span className={`font-medium ${Math.abs(scenario.result.slippageBps) > 50 ? 'text-red-400' : Math.abs(scenario.result.slippageBps) > 20 ? 'text-yellow-400' : 'text-green-400'}`}>
-                              {scenario.result.slippageBps.toFixed(1)} bps
-                            </span>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="flex justify-between">
-                            <span className="text-gray-300">Price:</span>
-                            <span className="font-medium text-white">
-                              {scenario.result.price}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-300">Crosses:</span>
-                            <span className={`font-medium ${scenario.result.crosses ? 'text-green-400' : 'text-yellow-400'}`}>
-                              {scenario.result.crosses ? 'Yes' : 'No'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-300">Queue:</span>
-                            <span className="font-medium text-white">{scenario.result.queueAheadQty?.toFixed(3) || 'N/A'}</span>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-sm text-gray-400 text-center">No orderbook data</div>
-                  )}
-                </div>
-              </div>
+              <Grid.Col key={scenario.value} span={{ base: 12, sm: 6, md: 3 }}>
+                <Card 
+                  shadow="sm" 
+                  p="md" 
+                  radius="lg" 
+                  bg={getScenarioColor(scenario.result)}
+                  style={{ 
+                    border: `1px solid var(--mantine-color-${getScenarioColor(scenario.result).replace('.9', '.6')})`,
+                    height: 180,
+                    display: 'flex',
+                    flexDirection: 'column'
+                  }}
+                >
+                  <Group justify="space-between" align="center" mb="xs">
+                    <Text size="sm" fw={600} c="gray.1">
+                      {scenario.icon} {scenario.label}
+                    </Text>
+                    {scenario.result && (
+                      <Badge 
+                        size="xs" 
+                        variant="light"
+                        color={scenario.result.status === 'filled' ? 'green' : 'gray'}
+                      >
+                        {scenario.result.status}
+                      </Badge>
+                    )}
+                  </Group>
+                  
+                  <Stack gap="xs" style={{ flex: 1 }}>
+                    {scenario.result ? (
+                      <>
+                        {scenario.result.type === 'market' && (
+                          <>
+                            <Group justify="space-between">
+                              <Text size="xs" c="gray.4">Fill %:</Text>
+                              <Text size="xs" c="gray.1" fw={500}>
+                                {scenario.result.filledPct.toFixed(1)}%
+                              </Text>
+                            </Group>
+                            <Group justify="space-between">
+                              <Text size="xs" c="gray.4">Avg Price:</Text>
+                              <Text size="xs" c="gray.1" fw={500}>
+                                ${scenario.result.avgPrice?.toFixed(2) || 'N/A'}
+                              </Text>
+                            </Group>
+                            <Group justify="space-between">
+                              <Text size="xs" c="gray.4">Slippage:</Text>
+                              <Text 
+                                size="xs" 
+                                fw={500}
+                                c={scenario.result.slippageBps > 20 ? 'red.4' : 'green.4'}
+                              >
+                                {scenario.result.slippageBps.toFixed(1)} bps
+                              </Text>
+                            </Group>
+                          </>
+                        )}
+                        {scenario.result.type === 'limit' && (
+                          <>
+                            <Group justify="space-between">
+                              <Text size="xs" c="gray.4">Price:</Text>
+                              <Text size="xs" c="gray.1" fw={500}>
+                                ${scenario.result.price?.toFixed(2) || 'N/A'}
+                              </Text>
+                            </Group>
+                            <Group justify="space-between">
+                              <Text size="xs" c="gray.4">Status:</Text>
+                              <Text size="xs" c="yellow.4" fw={500}>
+                                Pending
+                              </Text>
+                            </Group>
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <Text size="xs" c="gray.5" ta="center">
+                        No data available
+                      </Text>
+                    )}
+                  </Stack>
+                </Card>
+              </Grid.Col>
             ))}
-          </div>
+          </Grid>
 
-          {/* Best Scenario Recommendation */}
-          {comparisonResults.length > 0 && comparisonResults.some(s => s.result) && (
-            <div className="mt-4 p-4 bg-gray-900/50 border border-gray-600 rounded-lg">
-              <h4 className="font-semibold text-gray-300 mb-2">💡 Recommendation</h4>
-              <p className="text-sm text-gray-200">
-                Compare the scenarios above to choose the optimal timing for your order. 
-                Consider slippage, fill percentage, and market conditions when making your decision.
-              </p>
-            </div>
+          {/* Summary */}
+          {comparisonResults.length > 0 && (
+            <Paper p="md" radius="lg" bg="dark.6" style={{ border: '1px solid var(--mantine-color-dark-4)' }}>
+              <Group justify="space-between" align="center">
+                <Group align="center" gap="xs">
+                  <IconInfoCircle size={16} color="var(--mantine-color-blue-4)" />
+                  <Text size="sm" c="blue.4" fw={500}>Timing Analysis</Text>
+                </Group>
+                <Text size="xs" c="gray.4">
+                  Based on current market conditions for {comparisonParams.venue.toUpperCase()}
+                </Text>
+              </Group>
+            </Paper>
           )}
-          </div>
+        </Stack>
         )}
-      </div>
-    </div>
+      </Box>
+    </Paper>
   );
 } 
